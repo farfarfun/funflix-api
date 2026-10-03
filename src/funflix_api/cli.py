@@ -44,14 +44,12 @@ def _warn(message: str) -> None:
 
 
 def _default_server_config_path() -> Path:
-    """XDG 约定的默认配置文件路径：
-    `${XDG_CONFIG_HOME:-~/.config}/farfarfun/funflix-api/config.toml`。
+    """默认配置文件路径：`~/farfarfun/funflix/api/config.toml`。
 
     生产环境直接把配置文件放在这个路径下即可，`funflix-api start` 不用
     带任何参数；`--config` 仍然可以显式覆盖，开发时常用来指向仓库内的文件。
     """
-    xdg_config_home = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(xdg_config_home) / "farfarfun" / "funflix-api" / "config.toml"
+    return Path.home() / "farfarfun" / "funflix" / "api" / "config.toml"
 
 
 def _server_state_dir() -> Path:
@@ -71,7 +69,7 @@ def _server_log_file() -> Path:
 def _load_server_config(config: Path | None) -> dict[str, Any]:
     """按扩展名解析 `--config` 指向的文件：`.toml` / `.json` / `.env`。
 
-    未显式传 `--config` 时落到 XDG 默认路径；那个路径不存在就是没有配置文件、
+    未显式传 `--config` 时落到默认路径；那个路径不存在就是没有配置文件、
     直接用命令行默认值，不算错误。显式传了但文件不存在才报错。
     """
     path = config or _default_server_config_path()
@@ -156,7 +154,7 @@ def server_run(
     port: Annotated[int | None, typer.Option(help="监听端口，覆盖配置文件")] = None,
     config: Annotated[
         Path | None,
-        typer.Option("--config", help="配置文件路径（.toml/.json/.env），缺省用 XDG 默认路径"),
+        typer.Option("--config", help="配置文件路径（.toml/.json/.env），缺省用默认路径"),
     ] = None,
     reload: Annotated[
         bool, typer.Option(help="代码变更自动重载（开发用，不代表托管生命周期）")
@@ -185,7 +183,7 @@ def server_start(
     port: Annotated[int | None, typer.Option(help="监听端口，覆盖配置文件")] = None,
     config: Annotated[
         Path | None,
-        typer.Option("--config", help="配置文件路径（.toml/.json/.env），缺省用 XDG 默认路径"),
+        typer.Option("--config", help="配置文件路径（.toml/.json/.env），缺省用默认路径"),
     ] = None,
 ) -> None:
     """后台启动 API 服务。
@@ -259,7 +257,7 @@ def server_restart(
     port: Annotated[int | None, typer.Option(help="监听端口，覆盖配置文件")] = None,
     config: Annotated[
         Path | None,
-        typer.Option("--config", help="配置文件路径（.toml/.json/.env），缺省用 XDG 默认路径"),
+        typer.Option("--config", help="配置文件路径（.toml/.json/.env），缺省用默认路径"),
     ] = None,
 ) -> None:
     """重启：先 `stop`（没在跑也不报错），再 `start`。"""

@@ -35,7 +35,7 @@ funflix-api restart
 | `funflix-api status` | 查看后台服务是否在跑、PID、安装的版本号 |
 
 各命令默认监听 `127.0.0.1:18810`，`--host`/`--port`/`--config` 可覆盖；`--config`
-缺省时读 `${XDG_CONFIG_HOME:-~/.config}/farfarfun/funflix-api/config.toml`（不存在
+缺省时读 `~/farfarfun/funflix/api/config.toml`（不存在
 就用默认值，不算错误）。`start` 写的 PID 文件（`server.pid`）和日志（`server.log`）
 都放在同一个配置目录下，跟 `--config` 默认路径统一管理。
 
