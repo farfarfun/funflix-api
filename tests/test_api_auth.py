@@ -227,6 +227,6 @@ class TestRegistration:
 class TestReadEndpointsStayOpen:
     """面向使用者的产品接口不要求登录。"""
 
-    @pytest.mark.parametrize("path", ["/api/v1/media", "/healthz"])
+    @pytest.mark.parametrize("path", ["/api/v1/works", "/healthz"])
     async def test_open_without_login(self, anon, path) -> None:
         assert (await anon.get(path)).status_code == 200

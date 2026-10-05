@@ -6,7 +6,7 @@ import pytest
 import pytest_asyncio
 from funflix.base.enums import CheckStatus, MediaType, Provider, Quality
 from funflix.models import Media, Resource, Tag, TagKind, Work, utcnow
-from funflix.services.counters import refresh_media_counters
+from funflix.services.counters import refresh_media_counters, refresh_work_counters
 from funflix.worker.tasks import BatchReport
 
 
@@ -40,12 +40,26 @@ def _resource(share_id: str, *, provider=Provider.QUARK, status=CheckStatus.VALI
     )
 
 
+async def _recount(session, medias) -> None:
+    """先刷季、再刷作品 —— 作品计数是按季的计数求和来的。
+
+    顺序反过来的话作品会停在旧值：`refresh_work_counters` 读的是
+    `media.resource_count`，那时它还没被重算。见 `services/counters.py`。
+    """
+    media_ids = [m.id for m in medias]
+    work_ids = sorted({m.work_id for m in medias})
+    await refresh_media_counters(session, media_ids)
+    await session.commit()
+    await refresh_work_counters(session, work_ids)
+    await session.commit()
+
+
 @pytest_asyncio.fixture
 async def seeded(session):
-    """三部作品：一部带有效资源，两部只有未校验资源。
+    """三部作品各一季：一部带有效资源，两部只有未校验资源。
 
-    计数走 `refresh_media_counters` 真实算一遍，而不是手工赋值 ——
-    手工赋值会把「生产代码从不维护这两个计数」这件事整个盖住。
+    计数走 `refresh_media_counters` / `refresh_work_counters` 真实算一遍，
+    而不是手工赋值 —— 手工赋值会把「生产代码从不维护这些计数」这件事整个盖住。
     """
     hit = _media("误杀2", "误杀2")
     hit.resources = [_resource("aaa111")]
@@ -59,48 +73,47 @@ async def seeded(session):
 
     session.add_all([hit, barren, unknown])
     await session.commit()
-    await refresh_media_counters(session, [hit.id, barren.id, unknown.id])
-    await session.commit()
+    await _recount(session, [hit, barren, unknown])
     return {"hit": hit, "barren": barren, "unknown": unknown}
 
 
 @pytest.mark.asyncio
-class TestListMedia:
+class TestListWorks:
     async def test_lists_all_with_total(self, client, seeded) -> None:
-        body = (await client.get("/api/v1/media")).json()
+        body = (await client.get("/api/v1/works")).json()
         assert body["total"] == 3
         assert len(body["items"]) == 3
         assert body["page"] == 1
 
     async def test_keyword_narrows_results(self, client, seeded) -> None:
-        body = (await client.get("/api/v1/media", params={"keyword": "误杀"})).json()
+        body = (await client.get("/api/v1/works", params={"keyword": "误杀"})).json()
         assert body["total"] == 1
         assert body["items"][0]["title"] == "误杀2"
 
     async def test_filters_by_media_type(self, client, seeded) -> None:
-        body = (await client.get("/api/v1/media", params={"media_type": "tv"})).json()
+        body = (await client.get("/api/v1/works", params={"media_type": "tv"})).json()
         assert [i["title"] for i in body["items"]] == ["流浪地球"]
 
     async def test_valid_only_drops_media_without_valid_resource(self, client, seeded) -> None:
-        body = (await client.get("/api/v1/media", params={"valid_only": True})).json()
+        body = (await client.get("/api/v1/works", params={"valid_only": True})).json()
         assert [i["title"] for i in body["items"]] == ["误杀2"]
 
     async def test_total_reflects_filter_not_page_size(self, client, seeded) -> None:
         """total 必须是全量匹配数，不能是当前页条数 —— 否则前端翻页器算错页数。"""
-        body = (await client.get("/api/v1/media", params={"size": 1})).json()
+        body = (await client.get("/api/v1/works", params={"size": 1})).json()
         assert body["total"] == 3
         assert len(body["items"]) == 1
 
     async def test_paginates(self, client, seeded) -> None:
-        first = (await client.get("/api/v1/media", params={"size": 2, "page": 1})).json()
-        second = (await client.get("/api/v1/media", params={"size": 2, "page": 2})).json()
+        first = (await client.get("/api/v1/works", params={"size": 2, "page": 1})).json()
+        second = (await client.get("/api/v1/works", params={"size": 2, "page": 2})).json()
         assert len(first["items"]) == 2
         assert len(second["items"]) == 1
         ids = {i["id"] for i in first["items"]} | {i["id"] for i in second["items"]}
         assert len(ids) == 3
 
     async def test_unknown_year_serialized_as_null(self, client, seeded) -> None:
-        body = (await client.get("/api/v1/media", params={"keyword": "无名剧"})).json()
+        body = (await client.get("/api/v1/works", params={"keyword": "无名剧"})).json()
         assert body["items"][0]["year"] is None
 
     async def test_unknown_year_is_queryable(self, client, seeded) -> None:
@@ -109,7 +122,7 @@ class TestListMedia:
         之前 year 限了 ge=1888，客户端从列表里看到 year=null 这一档，
         想下钻却没有任何取值查得到 —— 出参吐出一个入参拒收的值。
         """
-        body = (await client.get("/api/v1/media", params={"year": 0})).json()
+        body = (await client.get("/api/v1/works", params={"year": 0})).json()
         assert [i["title"] for i in body["items"]] == ["无名剧"]
 
     @pytest.mark.parametrize("keyword", ["%", "_", "%%"])
@@ -119,7 +132,7 @@ class TestListMedia:
         不转义的话搜 `%` 命中全表、搜 `_` 匹配任意单字符，
         而分享标题里 `S01_1080p`、`100%纯爱` 这类名字很常见。
         """
-        body = (await client.get("/api/v1/media", params={"keyword": keyword})).json()
+        body = (await client.get("/api/v1/works", params={"keyword": keyword})).json()
         assert body["total"] == 0
         assert body["items"] == []
 
@@ -128,16 +141,16 @@ class TestListMedia:
         media.resources = [_resource("percent1")]
         session.add(media)
         await session.commit()
-        body = (await client.get("/api/v1/media", params={"keyword": "100%纯"})).json()
+        body = (await client.get("/api/v1/works", params={"keyword": "100%纯"})).json()
         assert [i["title"] for i in body["items"]] == ["100%纯爱"]
 
     async def test_huge_page_is_rejected_not_500(self, client, seeded) -> None:
         """page 没有上限时 (page-1)*size 会溢出，驱动抛 OverflowError 变成 500。"""
-        resp = await client.get("/api/v1/media", params={"page": 10**19})
+        resp = await client.get("/api/v1/works", params={"page": 10**19})
         assert resp.status_code == 422
 
     async def test_page_past_end_is_empty_not_error(self, client, seeded) -> None:
-        body = (await client.get("/api/v1/media", params={"page": 999})).json()
+        body = (await client.get("/api/v1/works", params={"page": 999})).json()
         assert body["items"] == []
         assert body["total"] == 3
 
@@ -152,7 +165,7 @@ class TestResourceCounters:
     """
 
     async def test_counts_reflect_linked_resources(self, client, seeded) -> None:
-        body = (await client.get("/api/v1/media", params={"keyword": "误杀"})).json()
+        body = (await client.get("/api/v1/works", params={"keyword": "误杀"})).json()
         assert body["items"][0]["resource_count"] == 1
         assert body["items"][0]["valid_resource_count"] == 1
 
@@ -171,7 +184,12 @@ class TestResourceCounters:
         assert tag.media_count == 0
 
     async def test_valid_count_drops_when_link_dies(self, client, session, seeded) -> None:
-        """链接被校验成失效后，作品的有效计数要跟着降下来。"""
+        """链接被校验成失效后，**作品**的有效计数要跟着降下来。
+
+        校验路径只认季（`refresh_for_resource` 拿到的是 media_id），而列表页
+        读的是 `Work` 上的计数 —— 中间少了「往上滚一层」那一步的话，链接都
+        挂了而作品还显示有可用资源，而且不会报任何错。
+        """
         from funflix.services.verify.base import CheckOutcome
         from funflix.services.verify.runner import check_resource
 
@@ -185,13 +203,97 @@ class TestResourceCounters:
         await check_resource(session, resource, DeadProbe())
         await session.commit()
 
-        body = (await client.get("/api/v1/media", params={"keyword": "误杀"})).json()
+        body = (await client.get("/api/v1/works", params={"keyword": "误杀"})).json()
         assert body["items"][0]["resource_count"] == 1, "链接还在，总数不该变"
         assert body["items"][0]["valid_resource_count"] == 0, "但它已经不可用了"
 
 
 @pytest.mark.asyncio
+class TestGetWork:
+    """作品详情：季列表嵌套，每季带若干资源。"""
+
+    async def test_returns_seasons_with_resources(self, client, session, seeded) -> None:
+        hit = seeded["hit"]
+        # 再加一季，验证季是**列表**而不是把所有资源拍平成一片
+        second = _media("误杀2 第2季", "误杀2-s2")
+        second.work = hit.work
+        second.season = 2
+        second.resources = [_resource("ddd444")]
+        session.add(second)
+        await session.commit()
+        await _recount(session, [hit, second])
+
+        resp = await client.get(f"/api/v1/works/{hit.work_id}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["title"] == "误杀2"
+        assert body["season_count"] == 2
+        assert body["resource_count"] == 2
+        assert [s["season"] for s in body["seasons"]] == [0, 2]
+        assert [len(s["resources"]) for s in body["seasons"]] == [1, 1]
+
+    async def test_404_for_missing(self, client, seeded) -> None:
+        assert (
+            await client.get("/api/v1/works/00000000-0000-0000-0000-000000000000")
+        ).status_code == 404
+
+    async def test_resources_are_capped_per_season(
+        self, client, session, seeded, monkeypatch
+    ) -> None:
+        """上限是**按季**的：全局上限会让后面的季一条链接都拿不到。"""
+        monkeypatch.setattr("funflix_api.v1.works.MAX_SEASON_RESOURCES", 2)
+        hit = seeded["hit"]
+        second = _media("误杀2 第2季", "误杀2-s2")
+        second.work = hit.work
+        second.season = 2
+        second.resources = [_resource(f"s2r{i:04d}", status=CheckStatus.INVALID) for i in range(5)]
+        for i in range(5):
+            hit.resources.append(_resource(f"s1r{i:04d}", status=CheckStatus.INVALID))
+        session.add(second)
+        await session.commit()
+        await _recount(session, [hit, second])
+
+        body = (await client.get(f"/api/v1/works/{hit.work_id}")).json()
+        assert [len(s["resources"]) for s in body["seasons"]] == [2, 2], "每季各给一把"
+        assert [s["resource_count"] for s in body["seasons"]] == [6, 5], "但总数仍是真实值"
+        assert body["resource_count"] == 11
+
+    async def test_valid_resources_come_first(self, client, session, seeded, monkeypatch) -> None:
+        """截断时优先保留能用的 —— 使用者要的就是一条可用链接。"""
+        monkeypatch.setattr("funflix_api.v1.works.MAX_SEASON_RESOURCES", 1)
+        hit = seeded["hit"]
+        for i in range(8):
+            hit.resources.append(_resource(f"dead{i:04d}", status=CheckStatus.INVALID))
+        await session.commit()
+
+        body = (await client.get(f"/api/v1/works/{hit.work_id}")).json()
+        assert body["seasons"][0]["resources"][0]["check_status"] == "valid"
+
+    async def test_truncation_does_not_delete_associations(
+        self, client, session, seeded, monkeypatch
+    ) -> None:
+        """截断只影响展示，绝不能动数据。
+
+        直接给关系属性赋值会被 ORM 当成「这就是全部关联」，flush 时把没列进来的
+        关联行删掉 —— 那样截断展示就变成了截断数据。所以用 set_committed_value。
+        """
+        monkeypatch.setattr("funflix_api.v1.works.MAX_SEASON_RESOURCES", 2)
+        hit = seeded["hit"]
+        for i in range(6):
+            hit.resources.append(_resource(f"keep{i:04d}", status=CheckStatus.INVALID))
+        await session.commit()
+
+        await client.get(f"/api/v1/works/{hit.work_id}")
+
+        await _recount(session, [hit])
+        body = (await client.get("/api/v1/works", params={"keyword": "误杀"})).json()
+        assert body["items"][0]["resource_count"] == 7, "关联被删掉了"
+
+
+@pytest.mark.asyncio
 class TestGetMedia:
+    """季级详情 —— 某一季资源太多、要看全部时才用得上。"""
+
     async def test_returns_detail_with_resources(self, client, seeded) -> None:
         resp = await client.get(f"/api/v1/media/{seeded['hit'].id}")
         assert resp.status_code == 200
@@ -214,8 +316,7 @@ class TestGetMedia:
         for i in range(10):
             hit.resources.append(_resource(f"bulk{i:04d}", status=CheckStatus.INVALID))
         await session.commit()
-        await refresh_media_counters(session, [hit.id])
-        await session.commit()
+        await _recount(session, [hit])
 
         body = (await client.get(f"/api/v1/media/{hit.id}")).json()
         assert len(body["resources"]) == 3, "应当被截断"
@@ -248,9 +349,8 @@ class TestGetMedia:
 
         await client.get(f"/api/v1/media/{hit.id}")
 
-        await refresh_media_counters(session, [hit.id])
-        await session.commit()
-        body = (await client.get("/api/v1/media", params={"keyword": "误杀"})).json()
+        await _recount(session, [hit])
+        body = (await client.get("/api/v1/works", params={"keyword": "误杀"})).json()
         assert body["items"][0]["resource_count"] == 7, "关联被删掉了"
 
 
