@@ -485,7 +485,7 @@ wheels = [
 
 [[package]]
 name = "funflix-api"
-version = "1.0.21"
+version = "1.0.22"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
