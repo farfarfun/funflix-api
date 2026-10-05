@@ -44,12 +44,12 @@ def _warn(message: str) -> None:
 
 
 def _default_server_config_path() -> Path:
-    """默认配置文件路径：`~/farfarfun/funflix/api/config.toml`。
+    """默认配置文件路径：`~/.farfarfun/funflix/api/config.toml`。
 
     生产环境直接把配置文件放在这个路径下即可，`funflix-api start` 不用
     带任何参数；`--config` 仍然可以显式覆盖，开发时常用来指向仓库内的文件。
     """
-    return Path.home() / "farfarfun" / "funflix" / "api" / "config.toml"
+    return Path.home() / ".farfarfun" / "funflix" / "api" / "config.toml"
 
 
 def _server_state_dir() -> Path:

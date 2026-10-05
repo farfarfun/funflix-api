@@ -35,7 +35,7 @@ funflix-api restart
 | `funflix-api status` | 查看后台服务是否在跑、PID、安装的版本号 |
 
 各命令默认监听 `127.0.0.1:18810`，`--host`/`--port`/`--config` 可覆盖；`--config`
-缺省时读 `~/farfarfun/funflix/api/config.toml`（不存在
+缺省时读 `~/.farfarfun/funflix/api/config.toml`（不存在
 就用默认值，不算错误）。`start` 写的 PID 文件（`server.pid`）和日志（`server.log`）
 都放在同一个配置目录下，跟 `--config` 默认路径统一管理。
 
@@ -50,7 +50,7 @@ funflix-api restart
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `FUNFLIX_DATABASE_URL` | `sqlite+aiosqlite:///./funflix.db` | 切 PG 改成 `postgresql+asyncpg://...` |
+| `FUNFLIX_DATABASE_URL` | `sqlite+aiosqlite:///~/.farfarfun/funflix/funflix.db` | 切 PG 改成 `postgresql+asyncpg://...`；默认是绝对路径，换目录执行读写的也是同一份库 |
 | `FUNFLIX_SESSION_SECRET` | 随机（每次重启变化） | 会话 cookie 签名密钥；多进程/需跨重启保留会话的部署必须固定配置 |
 | `FUNFLIX_SESSION_MAX_AGE` | `2592000`（30 天） | 会话 cookie 有效期（秒） |
 | `FUNFLIX_SESSION_COOKIE_SECURE` | `false` | 会话 cookie 是否加 Secure 标记；确认部署链路全程 HTTPS 后再打开 |
