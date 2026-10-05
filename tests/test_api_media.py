@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 from funflix.base.enums import CheckStatus, MediaType, Provider, Quality
-from funflix.models import Media, Resource, Tag, TagKind, Work, utcnow
+from funflix.models import Media, Resource, Tag, TagKind, Work, media_tag, utcnow
 from funflix.services.counters import refresh_media_counters, refresh_work_counters
 from funflix.worker.tasks import BatchReport
 
@@ -288,6 +288,31 @@ class TestGetWork:
         await _recount(session, [hit])
         body = (await client.get("/api/v1/works", params={"keyword": "误杀"})).json()
         assert body["items"][0]["resource_count"] == 7, "关联被删掉了"
+
+    async def test_tags_are_unioned_across_seasons(self, client, session, seeded) -> None:
+        """标签挂在季上，但题材/地区描述的是整部剧 —— 跨季取并集且去重。
+
+        不去重的话同一个「悬疑」会按季数重复出现在详情页的标签条上。
+        """
+        hit = seeded["hit"]
+        suspense = Tag(name="悬疑", norm_key="悬疑", kind=TagKind.GENRE)
+        india = Tag(name="印度", norm_key="印度", kind=TagKind.REGION)
+        second = _media("误杀2 第2季", "误杀2-s2")
+        second.work = hit.work
+        second.season = 2
+        second.resources = [_resource("ddd444")]
+        second.tags = [suspense, india]
+        session.add(second)
+        await session.flush()
+        # 第一季的标签直接写关联表：给已入库对象的关系属性赋值会先懒加载旧值，
+        # 异步会话下那一步就是 MissingGreenlet。第 2 季是新建对象，没这个问题。
+        await session.execute(
+            media_tag.insert().values(media_id=hit.id, tag_id=suspense.id, created_at=utcnow())
+        )
+        await session.commit()
+
+        body = (await client.get(f"/api/v1/works/{hit.work_id}")).json()
+        assert [t["name"] for t in body["tags"]] == ["悬疑", "印度"]
 
 
 @pytest.mark.asyncio

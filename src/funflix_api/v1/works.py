@@ -15,10 +15,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 from funflix.base.enums import CheckStatus, MediaType, Provider
-from funflix.models import Resource, Work, media_resource
+from funflix.models import Media, Resource, Tag, Work, media_resource, media_tag
 from funflix.models.media import UNKNOWN_YEAR
 from funflix.schemas.common import Page
-from funflix.schemas.media import WorkDetail, WorkSummary
+from funflix.schemas.media import TagOut, WorkDetail, WorkSummary
 from funflix.services.search import SearchQuery, count_works, search_works
 from sqlalchemy import case, select
 from sqlalchemy.orm import selectinload
@@ -79,7 +79,7 @@ async def list_works(
 
 @router.get("/{work_id}", response_model=WorkDetail)
 async def get_work(work_id: uuid.UUID, session: SessionDep) -> WorkDetail:
-    """作品详情，季列表嵌套，每季带若干网盘资源。
+    """作品详情，季列表嵌套，每季带若干网盘资源，标签跨季取并集。
 
     关联对象一律预加载 —— 异步会话下懒加载会在序列化时抛 MissingGreenlet，
     而不是悄悄多发几条查询。
@@ -111,4 +111,19 @@ async def get_work(work_id: uuid.UUID, session: SessionDep) -> WorkDetail:
         # 用 set_committed_value 而不是直接赋值：直接给关系属性赋值会被 ORM 当成
         # 「这就是全部关联」，flush 时把没列进来的关联行删掉 —— 截断展示会变成截断数据。
         set_committed_value(season, "resources", rows)
-    return WorkDetail.model_validate(work)
+
+    # 标签挂在季上，但题材/地区描述的是整部剧 —— 跨季取并集。
+    # `Work` 上没有 tags 关系，所以单独查出来再塞进出参，不走 model_validate。
+    detail = WorkDetail.model_validate(work)
+    detail.tags = [
+        TagOut.model_validate(t)
+        for t in await session.scalars(
+            select(Tag)
+            .join(media_tag, media_tag.c.tag_id == Tag.id)
+            .join(Media, Media.id == media_tag.c.media_id)
+            .where(Media.work_id == work_id)
+            .distinct()
+            .order_by(Tag.kind, Tag.name)
+        )
+    ]
+    return detail

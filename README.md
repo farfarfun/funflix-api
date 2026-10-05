@@ -82,10 +82,15 @@ funflix-api restart
 
 ### 查询
 
+搜索与浏览的主体是 **`Work`（一部剧）**，季挂在它下面 —— 搜「大主宰」返回
+一条「大主宰（4 季 / 1496 资源）」，而不是几百条同名行。非影视类型
+（`book` / `comic` / `other`）默认不进结果，要显式传 `media_type`。
+
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/v1/media` | 搜索 / 浏览作品，支持 `keyword`、`media_type`、`year`、`valid_only` 与翻页 |
-| `GET` | `/api/v1/media/{id}` | 作品详情，含全部网盘资源与标签 |
+| `GET` | `/api/v1/works` | 搜索 / 浏览作品，支持 `keyword`、`media_type`、`year`、`valid_only`、`provider` 与翻页 |
+| `GET` | `/api/v1/works/{id}` | 作品详情：季列表嵌套，每季带若干资源，标签跨季取并集 |
+| `GET` | `/api/v1/media/{id}` | **季**级详情，含该季全部网盘资源与标签 |
 | `GET` | `/api/v1/resources` | 按 `provider` / `check_status` 翻页看链接 |
 | `GET` | `/api/v1/resources/{id}` | 单条资源 |
 | `GET` | `/api/v1/stats` | 流水线各环节记录数与分布（`funflix status` 的 HTTP 版）|
@@ -94,7 +99,7 @@ funflix-api restart
 ### 鉴权
 
 `/sources`、`/raw`、`/resources`、`/stats` 整个「运维」区都要求登录（基于会话
-cookie）；`/media` 与 `/media/{id}` 保持开放，面向使用者。
+cookie）；`/works`、`/works/{id}` 与 `/media/{id}` 保持开放，面向使用者。
 
 先用 `funflix` 的 CLI 建一个账号（自助注册默认关闭，见上面的
 `FUNFLIX_REGISTRATION_ENABLED`）：
