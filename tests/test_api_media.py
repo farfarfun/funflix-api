@@ -5,13 +5,20 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 from funflix.base.enums import CheckStatus, MediaType, Provider, Quality
-from funflix.models import Media, Resource, Tag, TagKind, utcnow
+from funflix.models import Media, Resource, Tag, TagKind, Work, utcnow
 from funflix.services.counters import refresh_media_counters
 from funflix.worker.tasks import BatchReport
 
 
 def _media(title: str, norm: str, *, media_type=MediaType.MOVIE, year: int = 2024) -> Media:
     return Media(
+        work=Work(
+            title=title,
+            norm_key=norm,
+            media_type=media_type,
+            year=year,
+            aliases=[],
+        ),
         title=title,
         norm_key=norm,
         media_type=media_type,

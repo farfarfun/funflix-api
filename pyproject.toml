@@ -16,7 +16,8 @@ classifiers = [
 ]
 
 dependencies = [
-    "funflix>=0.1.64",
+    # 下界由 funbuild 在每次发版前抬到当时最新的 funflix, 见 [tool.funbuild]
+    "funflix>=1.0.5",
     "fastapi>=0.117.0",
     "uvicorn[standard]>=0.30",
     "itsdangerous>=2.0",
@@ -54,6 +55,12 @@ funflix-api = "funflix_api.cli:app"
 Organization = "https://github.com/farfarfun"
 Repository = "https://github.com/farfarfun/funflix-api"
 Releases = "https://github.com/farfarfun/funflix-api/releases"
+
+[tool.funbuild]
+# 每次发版前把这些依赖在上面 dependencies 里的版本下界抬到当时最新的已发布版本,
+# 使其进入 wheel metadata —— 否则下游 `pip install -U funflix-api` 默认
+# --upgrade-strategy only-if-needed, 已装的旧 funflix 满足旧下界就不会被升上来。
+latest-packages = ["funflix"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/funflix_api"]
