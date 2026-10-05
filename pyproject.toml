@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "funflix-api"
-version = "1.0.13"
+version = "1.0.14"
 description = "funflix 的 HTTP API 服务：依赖 funflix 提供的领域逻辑，供 funflix-web 反代消费"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -16,13 +16,11 @@ classifiers = [
 ]
 
 dependencies = [
-    # 下界由 funbuild 在每次发版前抬到当时最新的 funflix, 见 [tool.funbuild]
     "fastapi>=0.117.0",
     "uvicorn[standard]>=0.30",
     "itsdangerous>=2.0",
-    # 数据库地址与 LLM 凭证都从这里读（透传给 funflix.base.config）
-    "funsecret",
     "funflix>=1.0.13",
+    "funsecret>=1.4.96",
 ]
 license-files = ["LICENSE"]
 
@@ -57,10 +55,7 @@ Repository = "https://github.com/farfarfun/funflix-api"
 Releases = "https://github.com/farfarfun/funflix-api/releases"
 
 [tool.funbuild]
-# 每次发版前把这些依赖在上面 dependencies 里的版本下界抬到当时最新的已发布版本,
-# 使其进入 wheel metadata —— 否则下游 `pip install -U funflix-api` 默认
-# --upgrade-strategy only-if-needed, 已装的旧 funflix 满足旧下界就不会被升上来。
-latest-packages = ["funflix"]
+latest-packages = ["funflix","funsecret"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/funflix_api"]
