@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "funflix-api"
-version = "1.0.5"
+version = "1.0.13"
 description = "funflix 的 HTTP API 服务：依赖 funflix 提供的领域逻辑，供 funflix-web 反代消费"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -17,12 +17,12 @@ classifiers = [
 
 dependencies = [
     # 下界由 funbuild 在每次发版前抬到当时最新的 funflix, 见 [tool.funbuild]
-    "funflix>=1.0.5",
     "fastapi>=0.117.0",
     "uvicorn[standard]>=0.30",
     "itsdangerous>=2.0",
     # 数据库地址与 LLM 凭证都从这里读（透传给 funflix.base.config）
     "funsecret",
+    "funflix>=1.0.13",
 ]
 license-files = ["LICENSE"]
 
