@@ -460,7 +460,7 @@ wheels = [
 
 [[package]]
 name = "funflix"
-version = "1.0.14"
+version = "1.0.16"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiosqlite" },
@@ -480,12 +480,12 @@ dependencies = [
     { name = "typer" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e8/6f/198053a8f2144afebd03742d4b1487832175edbe8085ae847bc8d4dc5bf0/funflix-1.0.14-py3-none-any.whl", hash = "sha256:9b7df66ea4ae626afe4b55a29a15ad20482ec7d0f256f3e7574f537cad907974", size = 358703, upload-time = "2026-10-05T08:45:55.017Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/5b/f6261012b2a81f443f3e4ef251708cdc3b43a49ca3eaf0ea731ededce411/funflix-1.0.16-py3-none-any.whl", hash = "sha256:68efc62bf8fef443c4f376f77dc49616dd342855722d1fe622d19e6ac50fe4d7", size = 363427, upload-time = "2026-10-05T09:45:51.427Z" },
 ]
 
 [[package]]
 name = "funflix-api"
-version = "1.0.15"
+version = "1.0.16"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -506,7 +506,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.117.0" },
-    { name = "funflix", specifier = ">=1.0.14" },
+    { name = "funflix", specifier = ">=1.0.16" },
     { name = "funsecret", specifier = ">=1.4.96" },
     { name = "itsdangerous", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
