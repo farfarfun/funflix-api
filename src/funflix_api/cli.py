@@ -1,7 +1,7 @@
-"""funflix-api 命令行入口：API 服务的生命周期管理。
+"""funflix-api 命令行入口：API 服务与包生命周期管理。
 
 领域逻辑（采集/解析/校验/worker/数据库迁移）由 `funflix` 提供，用 `funflix`
-自己的 CLI 管理；这里只管 HTTP 服务进程本身的 run/start/stop/restart/status。
+自己的 CLI 管理；这里只管 HTTP 服务进程与 funflix-api 包本身。
 """
 
 from __future__ import annotations
@@ -21,7 +21,11 @@ from funflix.base.config import get_settings
 
 from funflix_api import __version__
 
-app = typer.Typer(help="funflix-api 服务生命周期", no_args_is_help=True)
+PACKAGE_NAME = "funflix-api"
+
+app = typer.Typer(help="funflix-api 命令行工具", no_args_is_help=True)
+server_app = typer.Typer(help="API 服务生命周期", no_args_is_help=True)
+app.add_typer(server_app, name="server")
 
 #: 命令行 / 配置文件都没给端口时的兜底默认值。
 DEFAULT_SERVER_HOST = "127.0.0.1"
@@ -46,7 +50,7 @@ def _warn(message: str) -> None:
 def _default_server_config_path() -> Path:
     """默认配置文件路径：`~/.farfarfun/funflix/api/config.toml`。
 
-    生产环境直接把配置文件放在这个路径下即可，`funflix-api start` 不用
+    生产环境直接把配置文件放在这个路径下即可，`funflix-api server start` 不用
     带任何参数；`--config` 仍然可以显式覆盖，开发时常用来指向仓库内的文件。
     """
     return Path.home() / ".farfarfun" / "funflix" / "api" / "config.toml"
@@ -130,6 +134,15 @@ def _resolve_cli_executable() -> str:
     return shutil.which("funflix-api") or sys.argv[0]
 
 
+def _run_uv_tool(arguments: list[str]) -> None:
+    executable = shutil.which("uv")
+    if executable is None:
+        _fail("未找到 uv；请先安装 uv")
+    result = subprocess.run([executable, "tool", *arguments], check=False)
+    if result.returncode != 0:
+        _fail(f"uv tool 执行失败（退出码 {result.returncode}）")
+
+
 def _version_callback(value: bool) -> None:
     if value:
         typer.echo(__version__)
@@ -148,7 +161,7 @@ def _main(
     """funflix-api：funflix 的 HTTP API 服务进程。"""
 
 
-@app.command("run")
+@server_app.command("run")
 def server_run(
     host: Annotated[str | None, typer.Option(help="监听地址，覆盖配置文件")] = None,
     port: Annotated[int | None, typer.Option(help="监听端口，覆盖配置文件")] = None,
@@ -162,7 +175,7 @@ def server_run(
 ) -> None:
     """前台启动 API 服务，Ctrl-C 停止。
 
-    调试、临时跑一下用这个；要后台常驻用 `funflix-api start`——它内部
+    调试、临时跑一下用这个；要后台常驻用 `funflix-api server start`——它内部
     就是拉一个子进程跑这条命令，只是重定向了输出、写了 PID 文件。
     """
     import uvicorn
@@ -177,7 +190,7 @@ def server_run(
     )
 
 
-@app.command("start")
+@server_app.command("start")
 def server_start(
     host: Annotated[str | None, typer.Option(help="监听地址，覆盖配置文件")] = None,
     port: Annotated[int | None, typer.Option(help="监听端口，覆盖配置文件")] = None,
@@ -199,7 +212,7 @@ def server_start(
     log_file = _server_log_file()
     pid_file.parent.mkdir(parents=True, exist_ok=True)
 
-    command = [_resolve_cli_executable(), "run"]
+    command = [_resolve_cli_executable(), "server", "run"]
     if host is not None:
         command += ["--host", host]
     if port is not None:
@@ -226,7 +239,7 @@ def server_start(
     _ok(f"funflix-api 已启动（pid {process.pid}，端口 {resolved_port}，日志 {log_file}）")
 
 
-@app.command("stop")
+@server_app.command("stop")
 def server_stop() -> None:
     """停止后台运行的 API 服务（发 SIGTERM，等它优雅退出）。"""
     pid_file = _server_pid_file()
@@ -251,7 +264,7 @@ def server_stop() -> None:
     _ok("funflix-api 已停止")
 
 
-@app.command("restart")
+@server_app.command("restart")
 def server_restart(
     host: Annotated[str | None, typer.Option(help="监听地址，覆盖配置文件")] = None,
     port: Annotated[int | None, typer.Option(help="监听端口，覆盖配置文件")] = None,
@@ -265,7 +278,7 @@ def server_restart(
     server_start(host=host, port=port, config=config)
 
 
-@app.command("status")
+@server_app.command("status")
 def server_status() -> None:
     """查看后台服务是否在跑，以及安装的版本号。"""
     pid = _read_server_pid()
@@ -275,3 +288,25 @@ def server_status() -> None:
         _warn(f"PID 文件失效（{_server_pid_file()}）")
     else:
         typer.secho(f"已停止（版本 {__version__}）", fg=typer.colors.BRIGHT_BLACK)
+
+
+@app.command("upgrade")
+def upgrade(
+    version: Annotated[str | None, typer.Argument(help="目标版本，省略则安装最新版")] = None,
+) -> None:
+    """升级到最新版或指定版本。"""
+    target = f"{PACKAGE_NAME}=={version}" if version else PACKAGE_NAME
+    _run_uv_tool(["install", "--upgrade", target])
+
+
+@app.command("rollback")
+def rollback(version: Annotated[str, typer.Argument(help="要回退到的版本")]) -> None:
+    """强制安装指定旧版本。"""
+    _run_uv_tool(["install", "--force", f"{PACKAGE_NAME}=={version}"])
+
+
+@app.command("uninstall")
+def uninstall() -> None:
+    """停止服务后卸载 funflix-api。"""
+    server_stop()
+    _run_uv_tool(["uninstall", PACKAGE_NAME])

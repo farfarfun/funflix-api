@@ -11,33 +11,40 @@
 ## 快速开始
 
 ```bash
-funbuild install   # 本地构建并安装（生产发布用 funbuild build）
+scripts/setup.sh install-dev   # 从当前源码构建并安装
 
 # 前台启动（开发用；默认端口 18810）
-funflix-api run --reload
+funflix-api server run --reload
 # 接口文档 http://127.0.0.1:18810/docs
 
 # 后台常驻、状态查询、停止、重启（生产用，本地一样适用）
-funflix-api start
-funflix-api status
-funflix-api stop
-funflix-api restart
+funflix-api server start
+funflix-api server status
+funflix-api server stop
+funflix-api server restart
 ```
 
 ## 命令行
 
 | 命令 | 说明 |
 | --- | --- |
-| `funflix-api run` | 前台启动 API 服务，Ctrl-C 停止；`--reload` 开发用 |
-| `funflix-api start` | 后台启动 API 服务：拉一个子进程跑 `run` |
-| `funflix-api stop` | 停止后台服务（`SIGTERM` 优雅退出） |
-| `funflix-api restart` | 先 `stop` 再 `start` |
-| `funflix-api status` | 查看后台服务是否在跑、PID、安装的版本号 |
+| `funflix-api server run` | 前台启动 API 服务，Ctrl-C 停止；`--reload` 开发用 |
+| `funflix-api server start` | 后台启动 API 服务：拉一个子进程跑 `server run` |
+| `funflix-api server stop` | 停止后台服务（`SIGTERM` 优雅退出） |
+| `funflix-api server restart` | 先 `stop` 再 `start` |
+| `funflix-api server status` | 查看后台服务是否在跑、PID、安装的版本号 |
+| `funflix-api upgrade [版本]` | 升级到最新版或指定版本 |
+| `funflix-api rollback <版本>` | 回退到指定版本 |
+| `funflix-api uninstall` | 停止服务后卸载包 |
 
 各命令默认监听 `127.0.0.1:18810`，`--host`/`--port`/`--config` 可覆盖；`--config`
 缺省时读 `~/.farfarfun/funflix/api/config.toml`（不存在
 就用默认值，不算错误）。`start` 写的 PID 文件（`server.pid`）和日志（`server.log`）
 都放在同一个配置目录下，跟 `--config` 默认路径统一管理。
+
+源码仓库的 `scripts/setup.sh` 是上述命令的薄封装。`install-dev` 从当前工作树构建并
+安装，`install-prod [版本]` 从包索引首次安装（省略版本且已安装时不升级），`publish`
+调用 `funbuild build`；服务动作不区分 dev/prod，只运行当前已安装的 CLI。
 
 若配置了 `FUNFLIX_WORKER_ENABLED=true`，服务进程会在启动时额外拉起一个进程内
 后台 worker（周期性采集 → 解析 → 校验），行为与 `funflix worker` 等价。
