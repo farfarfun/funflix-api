@@ -491,14 +491,14 @@ wheels = [
 
 [[package]]
 name = "funauth"
-version = "0.2.1"
+version = "0.2.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bcrypt" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/65/e1/1eb11cb4a6dea208ee699af54a9bd88b6f4cd1620232f5b1973041dd3f18/funauth-0.2.1-py3-none-any.whl", hash = "sha256:ccef6cf47b379964ea31a64ee5bdacb269a6fd89aa1d03793b5c93fdc8feafb2", size = 30095, upload-time = "2026-10-09T05:43:15.639Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/3e/72817b1752fc0e1d357522dede1c327072dac57c28e631b0b3f9cd8f3ca4/funauth-0.2.2-py3-none-any.whl", hash = "sha256:840d4756b6a940c22ce5e500fc26e8c91d34047c4bf915dccd7252f575ff3715", size = 57393, upload-time = "2026-10-09T09:38:03.06Z" },
 ]
 
 [package.optional-dependencies]
@@ -509,7 +509,7 @@ fastapi = [
 
 [[package]]
 name = "funflix"
-version = "1.0.31"
+version = "1.0.32"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiosqlite" },
@@ -529,12 +529,12 @@ dependencies = [
     { name = "typer" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/29/7c/4f875e8d714f1e5ebf1ad9c1fa8954f7387de68e625853287e7e0bc5368a/funflix-1.0.31-py3-none-any.whl", hash = "sha256:00819040077b4afb0d3bb31418eba5863b79686763a6ce594be3c64a904e1638", size = 473995, upload-time = "2026-10-09T05:52:53.739Z" },
+    { url = "https://files.pythonhosted.org/packages/78/b8/9b535c94bf2ba3e21bf012b7cd88f1d1a94db055cb404b02b04076e095dd/funflix-1.0.32-py3-none-any.whl", hash = "sha256:101614dd33b274bb29546b85d251b9113401a04952bd9aab80d18cc49eaaa157", size = 473996, upload-time = "2026-10-09T09:39:01.814Z" },
 ]
 
 [[package]]
 name = "funflix-api"
-version = "1.0.31"
+version = "1.0.32"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -556,8 +556,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.117.0" },
-    { name = "funauth", extras = ["fastapi"], specifier = ">=0.2.1" },
-    { name = "funflix", specifier = ">=1.0.31" },
+    { name = "funauth", extras = ["fastapi"], specifier = ">=0.2.2" },
+    { name = "funflix", specifier = ">=1.0.32" },
     { name = "funsecret", specifier = ">=1.4.96" },
     { name = "itsdangerous", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
