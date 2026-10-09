@@ -27,7 +27,7 @@ from funflix.services.verify.runner import RateLimiter
 from funflix.worker.tasks import run_verify_once
 from sqlalchemy import func, select
 
-from funflix_api.deps import CurrentUserDep, PageDep, SessionDep, get_or_404
+from funflix_api.deps import AdminUserDep, PageDep, SessionDep, get_or_404
 
 router = APIRouter(prefix="/resources", tags=["resources"])
 
@@ -38,7 +38,7 @@ _VERIFY_TRIGGER_LIMIT = 500
 async def list_resources(
     session: SessionDep,
     paging: PageDep,
-    _: CurrentUserDep,
+    _: AdminUserDep,
     provider: Provider | None = None,
     check_status: CheckStatus | None = None,
 ) -> Page[ResourceOut]:
@@ -72,14 +72,14 @@ async def list_resources(
 
 
 @router.get("/providers/checkable", response_model=list[Provider])
-async def list_checkable_providers(_: CurrentUserDep) -> list[Provider]:
+async def list_checkable_providers(_: AdminUserDep) -> list[Provider]:
     """返回当前真正实现了探针的网盘，供界面禁用其余校验按钮。"""
     return sorted(CHECKABLE_PROVIDERS, key=lambda provider: provider.value)
 
 
 @router.post("/providers/{provider}/verify", response_model=ProviderVerifyReportOut)
 async def verify_provider(
-    provider: Provider, session: SessionDep, _: CurrentUserDep
+    provider: Provider, session: SessionDep, _: AdminUserDep
 ) -> ProviderVerifyReportOut:
     """手动强制复查指定网盘最久未校验的一批资源。"""
     if provider not in CHECKABLE_PROVIDERS:
@@ -104,9 +104,7 @@ async def verify_provider(
 
 
 @router.get("/{resource_id}", response_model=ResourceOut)
-async def get_resource(
-    resource_id: uuid.UUID, session: SessionDep, _: CurrentUserDep
-) -> ResourceOut:
+async def get_resource(resource_id: uuid.UUID, session: SessionDep, _: AdminUserDep) -> ResourceOut:
     """单条资源详情。与列表接口同样要 key。
 
     这里曾经是开放的，理由写的是「知道 id 才查得到」—— 那个推理在 id 还是

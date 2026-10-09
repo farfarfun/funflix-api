@@ -14,12 +14,12 @@ from fastapi import APIRouter
 from funflix.schemas.stats import PipelineStatsOut
 from funflix.services.stats import collect_stats
 
-from funflix_api.deps import CurrentUserDep, SessionDep
+from funflix_api.deps import AdminUserDep, SessionDep
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
 
 @router.get("", response_model=PipelineStatsOut)
-async def get_stats(session: SessionDep, _: CurrentUserDep) -> PipelineStatsOut:
+async def get_stats(session: SessionDep, _: AdminUserDep) -> PipelineStatsOut:
     """采集 → 抽取 → 作品/资源 → 校验，各环节的记录数与分布。"""
     return PipelineStatsOut.model_validate(await collect_stats(session))

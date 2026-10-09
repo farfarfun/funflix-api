@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 import pytest_asyncio
+from funauth import UserRole
 from funflix.base.db import get_session
 from funflix.models import Base, User
 from funflix.security import hash_password
@@ -15,6 +16,10 @@ from funflix_api.app import create_app
 #: 测试用的登录账号。运维接口的读写都要先登录。
 ADMIN_USERNAME = "tester"
 ADMIN_PASSWORD = "test-password"
+
+#: 访客账号。能进站看作品，但撞运维接口拿 403。
+GUEST_USERNAME = "visitor"
+GUEST_PASSWORD = "visitor-password"
 
 
 @pytest_asyncio.fixture
@@ -58,10 +63,15 @@ async def client(engine) -> AsyncIterator[AsyncClient]:
         yield c
 
 
-@pytest_asyncio.fixture
-async def admin_client(engine, session) -> AsyncIterator[AsyncClient]:
-    """已登录的客户端，用于需要登录态的运维接口。"""
-    session.add(User(username=ADMIN_USERNAME, password_hash=hash_password(ADMIN_PASSWORD)))
+async def _logged_in_client(
+    engine, session, username: str, password: str, role: UserRole
+) -> AsyncIterator[AsyncClient]:
+    """建号 + 登录，返回带着 cookie 的客户端。
+
+    角色必须显式给。ORM 默认是 `GUEST`（漏传时往最小权限掉），所以这里不写
+    `role=UserRole.ADMIN` 的话运维接口全都会 403。
+    """
+    session.add(User(username=username, password_hash=hash_password(password), role=role))
     await session.commit()
 
     app = create_app()
@@ -74,8 +84,24 @@ async def admin_client(engine, session) -> AsyncIterator[AsyncClient]:
     app.dependency_overrides[get_session] = _override
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
-        resp = await c.post(
-            "/api/v1/auth/login", json={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD}
-        )
-        assert resp.status_code == 200
+        resp = await c.post("/api/v1/auth/login", json={"username": username, "password": password})
+        assert resp.status_code == 200, resp.text
+        yield c
+
+
+@pytest_asyncio.fixture
+async def admin_client(engine, session) -> AsyncIterator[AsyncClient]:
+    """已登录的管理员客户端，用于运维接口。"""
+    async for c in _logged_in_client(
+        engine, session, ADMIN_USERNAME, ADMIN_PASSWORD, UserRole.ADMIN
+    ):
+        yield c
+
+
+@pytest_asyncio.fixture
+async def guest_client(engine, session) -> AsyncIterator[AsyncClient]:
+    """已登录的访客客户端：过了站点门禁，但进不了运维区。"""
+    async for c in _logged_in_client(
+        engine, session, GUEST_USERNAME, GUEST_PASSWORD, UserRole.GUEST
+    ):
         yield c

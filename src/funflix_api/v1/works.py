@@ -24,7 +24,7 @@ from sqlalchemy import case, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
-from funflix_api.deps import PageDep, SessionDep
+from funflix_api.deps import CurrentUserDep, PageDep, SessionDep
 
 #: 详情页每季最多返回多少条资源。季行上的 `resource_count` 仍是真实总数。
 #:
@@ -39,6 +39,7 @@ router = APIRouter(prefix="/works", tags=["works"])
 async def list_works(
     session: SessionDep,
     paging: PageDep,
+    _: CurrentUserDep,
     keyword: str = Query(
         default="", max_length=128, description="剧名关键词，留空则按入库时间倒序"
     ),
@@ -78,7 +79,7 @@ async def list_works(
 
 
 @router.get("/{work_id}", response_model=WorkDetail)
-async def get_work(work_id: uuid.UUID, session: SessionDep) -> WorkDetail:
+async def get_work(work_id: uuid.UUID, session: SessionDep, _: CurrentUserDep) -> WorkDetail:
     """作品详情，季列表嵌套，每季带若干网盘资源，标签跨季取并集。
 
     关联对象一律预加载 —— 异步会话下懒加载会在序列化时抛 MissingGreenlet，

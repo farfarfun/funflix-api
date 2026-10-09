@@ -19,7 +19,7 @@ from funflix.schemas.raw import (
 from funflix.services.ingest import IngestOutcome, ingest_document, ingest_many
 from sqlalchemy import func, select
 
-from funflix_api.deps import CurrentUserDep, PageDep, SessionDep, SettingsDep
+from funflix_api.deps import AdminUserDep, PageDep, SessionDep, SettingsDep
 
 router = APIRouter(prefix="/raw", tags=["raw"])
 
@@ -49,7 +49,7 @@ async def create_raw_document(
     payload: RawDocumentCreate,
     session: SessionDep,
     settings: SettingsDep,
-    _: CurrentUserDep,
+    _: AdminUserDep,
 ) -> IngestResult:
     """提交一条原始分享文本。
 
@@ -66,7 +66,7 @@ async def create_raw_documents(
     payload: RawDocumentBatchCreate,
     session: SessionDep,
     settings: SettingsDep,
-    _: CurrentUserDep,
+    _: AdminUserDep,
 ) -> BatchIngestResult:
     """批量提交。整批在一个事务里，要么全成要么全滚。"""
     if len(payload.items) > settings.ingest_max_batch:
@@ -94,7 +94,7 @@ async def create_raw_documents(
 async def list_raw_documents(
     session: SessionDep,
     paging: PageDep,
-    _: CurrentUserDep,
+    _: AdminUserDep,
     parse_status: ParseStatus | None = None,
     source_type: SourceType | None = None,
     source_name: str | None = None,
@@ -126,7 +126,7 @@ async def list_raw_documents(
 
 @router.get("/{doc_id}", response_model=RawDocumentOut)
 async def get_raw_document(
-    doc_id: uuid.UUID, session: SessionDep, _: CurrentUserDep
+    doc_id: uuid.UUID, session: SessionDep, _: AdminUserDep
 ) -> RawDocumentOut:
     doc = await session.get(RawDocument, doc_id)
     if doc is None:

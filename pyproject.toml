@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "funflix-api"
-version = "1.0.29"
+version = "1.0.30"
 description = "funflix 的 HTTP API 服务：依赖 funflix 提供的领域逻辑，供 funflix-web 反代消费"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -20,7 +20,11 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "itsdangerous>=2.0",
     "funsecret>=1.4.96",
-    "funflix>=1.0.29",
+    "funflix>=1.0.30",
+    # 登录 / 注册那一组路由和两道门禁都是它现成的（`funauth.contrib.fastapi`）。
+    # funflix 已经间接带了 funauth，但本仓直接 import 它的 contrib 子模块，
+    # 那就该自己写出来 —— 顺便把 `[fastapi]` extra 显式要上。
+    "funauth[fastapi]>=0.2.0",
 ]
 license-files = ["LICENSE"]
 
@@ -55,7 +59,7 @@ Repository = "https://github.com/farfarfun/funflix-api"
 Releases = "https://github.com/farfarfun/funflix-api/releases"
 
 [tool.funbuild]
-latest-packages = ["funflix","funsecret"]
+latest-packages = ["funflix","funsecret","funauth"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/funflix_api"]

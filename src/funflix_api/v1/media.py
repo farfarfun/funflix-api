@@ -16,7 +16,7 @@ from sqlalchemy import case, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
-from funflix_api.deps import SessionDep
+from funflix_api.deps import CurrentUserDep, SessionDep
 
 #: 详情页最多返回多少条资源。`resource_count` 仍是真实总数。
 MAX_DETAIL_RESOURCES = 200
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/media", tags=["media"])
 
 
 @router.get("/{media_id}", response_model=MediaDetail)
-async def get_media(media_id: uuid.UUID, session: SessionDep) -> MediaDetail:
+async def get_media(media_id: uuid.UUID, session: SessionDep, _: CurrentUserDep) -> MediaDetail:
     """一季的详情，含网盘资源与标签。
 
     关联对象一律预加载 —— 异步会话下懒加载会在序列化时抛 MissingGreenlet，
