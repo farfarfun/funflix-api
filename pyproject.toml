@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "funflix-api"
-version = "1.0.33"
+version = "1.0.34"
 description = "funflix 的 HTTP API 服务：依赖 funflix 提供的领域逻辑，供 funflix-web 反代消费"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -24,7 +24,7 @@ dependencies = [
     # funflix 已经间接带了 funauth，但本仓直接 import 它的 contrib 子模块，
     # 那就该自己写出来 —— 顺便把 `[fastapi]` extra 显式要上。
     "funauth[fastapi]>=0.2.2",
-    "funflix>=1.0.32",
+    "funflix>=1.0.34",
 ]
 license-files = ["LICENSE"]
 
