@@ -15,6 +15,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from funflix_api.app import create_app
+from funflix_api.config import read_server_config
+from funflix_api.v1.sso import load_config
 
 
 class FakeOidcClient:
@@ -32,16 +34,53 @@ class FakeOidcClient:
         return {"id_token": "validated", "userinfo": self.claims}
 
 
-@pytest.mark.asyncio
-async def test_oidc_start_uses_pkce_and_nonce(monkeypatch) -> None:
-    monkeypatch.setenv("FUNFLIX_OIDC_ISSUER", "https://id.example.com")
-    monkeypatch.setenv("FUNFLIX_OIDC_CLIENT_ID", "funflix")
-    monkeypatch.setenv("FUNFLIX_OIDC_CLIENT_SECRET", "secret")
-    monkeypatch.setenv("FUNFLIX_OIDC_ADMIN_SUBJECT", "built-in/admin-id")
-    monkeypatch.setenv(
-        "FUNFLIX_OIDC_REDIRECT_URI", "https://flix.example.com/api/v1/auth/oidc/callback"
+@pytest.fixture
+def sso_config(tmp_path):
+    config = tmp_path / "config.toml"
+    config.write_text(
+        'oidc_issuer = "https://id.example.com"\n'
+        'oidc_client_id = "funflix"\n'
+        'oidc_client_secret = "secret"\n'
+        'oidc_admin_subject = "built-in/admin-id"\n'
+        'oidc_redirect_uri = "https://flix.example.com/api/v1/auth/oidc/callback"\n'
+        "oidc_timeout_seconds = 45\n"
+        'session_secret = "fixed-test-secret"\n'
+        "session_max_age = 120\n"
+        "session_cookie_secure = true\n"
     )
-    app = create_app()
+    config.chmod(0o600)
+    return config
+
+
+@pytest.mark.parametrize("timeout", [0, -1, "nan", "bad"])
+def test_oidc_timeout_must_be_positive(timeout) -> None:
+    config = {
+        "oidc_issuer": "https://id.example.com",
+        "oidc_client_id": "funflix",
+        "oidc_client_secret": "secret",
+        "oidc_redirect_uri": "https://flix.example.com/api/v1/auth/oidc/callback",
+        "oidc_admin_subject": "built-in/admin-id",
+        "oidc_timeout_seconds": timeout,
+    }
+    with pytest.raises(RuntimeError, match="oidc_timeout_seconds"):
+        load_config(config)
+
+
+def test_oidc_timeout_defaults_to_120(sso_config) -> None:
+    config = read_server_config(sso_config)
+    config.pop("oidc_timeout_seconds")
+    assert load_config(config).timeout_seconds == 120
+
+
+@pytest.mark.asyncio
+async def test_oidc_start_uses_pkce_and_nonce(sso_config, monkeypatch) -> None:
+    monkeypatch.setenv("FUNFLIX_OIDC_ISSUER", "https://wrong.example.com")
+    monkeypatch.setenv("FUNFLIX_SESSION_COOKIE_SECURE", "false")
+    monkeypatch.setenv("FUNFLIX_SESSION_MAX_AGE", "999")
+    app = create_app(sso_config)
+    assert app.state.oidc_client.client_kwargs["timeout"] == 45
+    async with app.state.oidc_client._get_oauth_client() as oidc_http_client:
+        assert oidc_http_client.timeout.read == 45
     app.state.oidc_client.load_server_metadata = AsyncMock(
         return_value={"authorization_endpoint": "https://id.example.com/login/oauth/authorize"}
     )
@@ -55,20 +94,17 @@ async def test_oidc_start_uses_pkce_and_nonce(monkeypatch) -> None:
     assert params["code_challenge"][0]
     assert params["nonce"][0]
     assert params["state"][0]
+    assert "secure" in response.headers["set-cookie"].lower()
+    assert "Max-Age=120" in response.headers["set-cookie"]
 
 
 @pytest.mark.asyncio
 async def test_oidc_login_creates_guest_reuses_identity_and_blocks_disabled_user(
-    engine, monkeypatch
+    engine, sso_config, monkeypatch
 ) -> None:
-    monkeypatch.setenv("FUNFLIX_OIDC_ISSUER", "https://id.example.com")
-    monkeypatch.setenv("FUNFLIX_OIDC_CLIENT_ID", "funflix")
-    monkeypatch.setenv("FUNFLIX_OIDC_CLIENT_SECRET", "secret")
-    monkeypatch.setenv("FUNFLIX_OIDC_ADMIN_SUBJECT", "built-in/admin-id")
-    monkeypatch.setenv(
-        "FUNFLIX_OIDC_REDIRECT_URI", "https://flix.example.com/api/v1/auth/oidc/callback"
-    )
-    app = create_app()
+    monkeypatch.setenv("FUNFLIX_OIDC_ISSUER", "https://wrong.example.com")
+    monkeypatch.setenv("FUNFLIX_OIDC_ADMIN_SUBJECT", "wrong")
+    app = create_app(sso_config)
     assert app.state.oidc_client.client_kwargs["code_challenge_method"] == "S256"
     fake = FakeOidcClient()
     app.state.oidc_client = fake
@@ -129,15 +165,8 @@ async def test_oidc_login_creates_guest_reuses_identity_and_blocks_disabled_user
 
 
 @pytest.mark.asyncio
-async def test_oidc_callback_rejects_wrong_issuer(engine, monkeypatch) -> None:
-    monkeypatch.setenv("FUNFLIX_OIDC_ISSUER", "https://id.example.com")
-    monkeypatch.setenv("FUNFLIX_OIDC_CLIENT_ID", "funflix")
-    monkeypatch.setenv("FUNFLIX_OIDC_CLIENT_SECRET", "secret")
-    monkeypatch.setenv("FUNFLIX_OIDC_ADMIN_SUBJECT", "built-in/admin-id")
-    monkeypatch.setenv(
-        "FUNFLIX_OIDC_REDIRECT_URI", "https://flix.example.com/api/v1/auth/oidc/callback"
-    )
-    app = create_app()
+async def test_oidc_callback_rejects_wrong_issuer(engine, sso_config) -> None:
+    app = create_app(sso_config)
     fake = FakeOidcClient()
     fake.claims = {"iss": "https://other.example.com", "sub": "alice"}
     app.state.oidc_client = fake

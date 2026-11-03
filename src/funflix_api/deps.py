@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 from typing import Annotated, Any
 
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from funauth.contrib.fastapi import CookieSessionStore, make_user_deps
 from funflix.base.config import Settings, get_settings
 from funflix.base.db import get_session
@@ -86,11 +85,9 @@ CurrentUserDep = _guards.current_user
 LocalAdminUserDep = _guards.admin_user
 
 
-async def sso_admin_user(user: LocalAdminUserDep) -> Any:
-    issuer = os.getenv("FUNFLIX_OIDC_ISSUER", "").rstrip("/")
-    if issuer and (
-        user.oidc_issuer != issuer or user.oidc_subject != os.getenv("FUNFLIX_OIDC_ADMIN_SUBJECT")
-    ):
+async def sso_admin_user(request: Request, user: LocalAdminUserDep) -> Any:
+    config = request.app.state.oidc_config
+    if config and (user.oidc_issuer != config.issuer or user.oidc_subject != config.admin_subject):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
     return user
 

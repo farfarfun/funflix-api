@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import signal
@@ -20,6 +19,8 @@ import typer
 from funflix.base.config import get_settings
 
 from funflix_api import __version__
+from funflix_api.config import default_server_config_path as _default_server_config_path
+from funflix_api.config import read_server_config
 
 PACKAGE_NAME = "funflix-api"
 
@@ -47,15 +48,6 @@ def _warn(message: str) -> None:
     typer.secho(message, fg=typer.colors.YELLOW)
 
 
-def _default_server_config_path() -> Path:
-    """默认配置文件路径：`~/.farfarfun/funflix/api/config.toml`。
-
-    生产环境直接把配置文件放在这个路径下即可，`funflix-api server start` 不用
-    带任何参数；`--config` 仍然可以显式覆盖，开发时常用来指向仓库内的文件。
-    """
-    return Path.home() / ".farfarfun" / "funflix" / "api" / "config.toml"
-
-
 def _server_state_dir() -> Path:
     """PID/日志统一放在配置目录下，跟 `--config` 默认路径同一棵树管理，
     不依赖仓库或当前工作目录。"""
@@ -71,63 +63,16 @@ def _server_log_file() -> Path:
 
 
 def _load_server_config(config: Path | None) -> dict[str, Any]:
-    """按扩展名解析 `--config` 指向的文件：`.toml` / `.json` / `.env`。
-
-    未显式传 `--config` 时落到默认路径；那个路径不存在就是没有配置文件、
-    直接用命令行默认值，不算错误。显式传了但文件不存在才报错。
-    """
-    path = config or _default_server_config_path()
-    if not path.exists():
-        if config is not None:
-            _fail(f"配置文件不存在：{path}")
-        return {}
-
-    suffix = path.suffix.lower()
-    if suffix == ".toml":
-        import tomllib
-
-        data: dict[str, Any] = tomllib.loads(path.read_text(encoding="utf-8"))
-    elif suffix == ".json":
-        data = json.loads(path.read_text(encoding="utf-8"))
-    elif suffix == ".env":
-        from dotenv import dotenv_values
-
-        data = dict(dotenv_values(path))
-    else:
-        _fail(f"不支持的配置文件格式：{path.suffix}（仅支持 .toml / .json / .env）")
-    result = {str(key).lower(): value for key, value in data.items() if value is not None}
-    if (
-        any(
-            key in result
-            for key in (
-                "oidc_client_secret",
-                "funflix_oidc_client_secret",
-                "session_secret",
-                "funflix_session_secret",
-            )
-        )
-        and path.stat().st_mode & 0o077
-    ):
-        _fail(f"包含密钥的配置文件权限必须是 0600：{path}")
-    return result
+    try:
+        return read_server_config(config)
+    except (FileNotFoundError, ValueError, PermissionError) as exc:
+        _fail(str(exc))
 
 
 def _resolve_server_host_port(
     host: str | None, port: int | None, config: Path | None
 ) -> tuple[str, int]:
     file_config = _load_server_config(config)
-    for key in (
-        "session_secret",
-        "session_cookie_secure",
-        "oidc_issuer",
-        "oidc_client_id",
-        "oidc_client_secret",
-        "oidc_redirect_uri",
-        "oidc_admin_subject",
-    ):
-        value = file_config.get(key, file_config.get(f"funflix_{key}"))
-        if value is not None:
-            os.environ.setdefault(f"FUNFLIX_{key.upper()}", str(value))
     resolved_host = host or str(file_config.get("host") or DEFAULT_SERVER_HOST)
     resolved_port = (
         port if port is not None else int(file_config.get("port") or DEFAULT_SERVER_PORT)
@@ -207,8 +152,17 @@ def server_run(
     import uvicorn
 
     resolved_host, resolved_port = _resolve_server_host_port(host, port, config)
+    # shortcut: Uvicorn reload 在新进程导入应用；自定义路径需要单独的传参机制。
+    if reload and config is not None:
+        _fail("--reload 不支持自定义 --config；请使用默认配置文件路径")
+    if config is not None:
+        from funflix_api.app import create_app
+
+        target = create_app(config)
+    else:
+        target = "funflix_api.app:app"
     uvicorn.run(
-        "funflix_api.app:app",
+        target,
         host=resolved_host,
         port=resolved_port,
         reload=reload,

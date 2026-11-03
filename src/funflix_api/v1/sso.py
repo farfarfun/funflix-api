@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import hashlib
-import os
+import math
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urlsplit
 
 from authlib.integrations.base_client.errors import OAuthError
@@ -18,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from starlette.applications import Starlette
 
+from funflix_api.config import config_value
 from funflix_api.deps import SessionDep, session_store
 
 router = APIRouter(prefix="/auth/oidc", tags=["auth"])
@@ -30,17 +32,16 @@ class OidcConfig:
     client_secret: str
     redirect_uri: str
     admin_subject: str
+    timeout_seconds: float
 
 
-def load_config() -> OidcConfig | None:
+def load_config(file_config: dict[str, Any]) -> OidcConfig | None:
     keys = ("issuer", "client_id", "client_secret", "redirect_uri", "admin_subject")
-    values = {key: os.getenv(f"FUNFLIX_OIDC_{key.upper()}", "").strip() for key in keys}
+    values = {key: str(config_value(file_config, f"oidc_{key}") or "").strip() for key in keys}
     if not any(values.values()):
         return None
     if not all(values.values()):
-        raise RuntimeError(
-            "FUNFLIX_OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI/ADMIN_SUBJECT 必须全部配置"
-        )
+        raise RuntimeError("配置文件中的五个 oidc_* 字段必须全部配置")
 
     issuer = values["issuer"].rstrip("/")
     redirect = urlsplit(values["redirect_uri"])
@@ -53,20 +54,28 @@ def load_config() -> OidcConfig | None:
         or issuer_url.fragment
         or len(issuer) > 255
     ):
-        raise RuntimeError("FUNFLIX_OIDC_ISSUER 必须是 HTTPS 地址")
+        raise RuntimeError("oidc_issuer 必须是 HTTPS 地址")
     if redirect.scheme != "https" or not redirect.hostname or redirect.query or redirect.fragment:
-        raise RuntimeError("FUNFLIX_OIDC_REDIRECT_URI 必须是无片段的 HTTPS 地址")
+        raise RuntimeError("oidc_redirect_uri 必须是无片段的 HTTPS 地址")
+    try:
+        raw_timeout = config_value(file_config, "oidc_timeout_seconds")
+        timeout = float(120 if raw_timeout is None else raw_timeout)
+    except (TypeError, ValueError) as err:
+        raise RuntimeError("oidc_timeout_seconds 必须是正数") from err
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise RuntimeError("oidc_timeout_seconds 必须是正数")
     return OidcConfig(
         issuer=issuer,
         client_id=values["client_id"],
         client_secret=values["client_secret"],
         redirect_uri=values["redirect_uri"],
         admin_subject=values["admin_subject"],
+        timeout_seconds=timeout,
     )
 
 
-def configure(app: Starlette) -> bool:
-    config = load_config()
+def configure(app: Starlette, file_config: dict[str, Any]) -> bool:
+    config = load_config(file_config)
     app.state.oidc_config = config
     if config is None:
         return False
@@ -76,7 +85,11 @@ def configure(app: Starlette) -> bool:
         client_id=config.client_id,
         client_secret=config.client_secret,
         server_metadata_url=f"{config.issuer}/.well-known/openid-configuration",
-        client_kwargs={"scope": "openid profile email", "code_challenge_method": "S256"},
+        client_kwargs={
+            "scope": "openid profile email",
+            "code_challenge_method": "S256",
+            "timeout": config.timeout_seconds,
+        },
     )
     return True
 

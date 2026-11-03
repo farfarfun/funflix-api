@@ -6,6 +6,7 @@ import typer
 from typer.testing import CliRunner
 
 from funflix_api import cli
+from funflix_api.app import create_app
 
 runner = CliRunner()
 
@@ -18,15 +19,29 @@ def test_default_server_config_path() -> None:
 
 def test_sso_config_requires_private_file_and_reaches_runtime(tmp_path, monkeypatch) -> None:
     config = tmp_path / "config.toml"
-    config.write_text('oidc_issuer = "https://id.example.com"\noidc_client_secret = "secret"\n')
+    config.write_text(
+        'oidc_issuer = "https://id.example.com"\n'
+        'oidc_client_id = "funflix"\n'
+        'oidc_client_secret = "secret"\n'
+        'oidc_redirect_uri = "https://flix.example.com/api/v1/auth/oidc/callback"\n'
+        'oidc_admin_subject = "built-in/admin-id"\n'
+        'session_secret = "fixed-test-secret"\n'
+    )
     with pytest.raises(typer.Exit):
         cli._resolve_server_host_port(None, None, config)
 
     config.chmod(0o600)
-    monkeypatch.setattr(cli.os, "environ", {})
+    monkeypatch.setenv("FUNFLIX_OIDC_ISSUER", "https://wrong.example.com")
+    monkeypatch.setenv("FUNFLIX_OIDC_ADMIN_SUBJECT", "wrong")
     assert cli._resolve_server_host_port(None, None, config) == ("127.0.0.1", 18810)
-    assert cli.os.environ["FUNFLIX_OIDC_ISSUER"] == "https://id.example.com"
-    assert cli.os.environ["FUNFLIX_OIDC_CLIENT_SECRET"] == "secret"
+    app = create_app(config)
+    assert app.state.oidc_config.issuer == "https://id.example.com"
+    assert app.state.oidc_config.admin_subject == "built-in/admin-id"
+
+    run = Mock()
+    monkeypatch.setattr("uvicorn.run", run)
+    cli.server_run(host=None, port=None, config=config, reload=False)
+    assert run.call_args.args[0].state.oidc_config.issuer == "https://id.example.com"
 
 
 def test_cli_command_tree() -> None:

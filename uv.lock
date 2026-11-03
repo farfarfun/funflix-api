@@ -522,7 +522,7 @@ fastapi = [
 
 [[package]]
 name = "funflix"
-version = "1.0.37"
+version = "1.0.38"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiosqlite" },
@@ -542,12 +542,12 @@ dependencies = [
     { name = "typer" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3f/09/e0ecca44edf5f5a301115b4c1e54d88cc6fefe104f28274d70497bc53f15/funflix-1.0.37-py3-none-any.whl", hash = "sha256:54c30b14289eabe5bf0e14a972f488fe6c5d2437411591111a2c33ae6dee9b5e", size = 477947, upload-time = "2026-11-03T07:16:29.099Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/bd/53d28b4b723d6e37029e1243bb364eb31e803d54508bba531e342c1afc76/funflix-1.0.38-py3-none-any.whl", hash = "sha256:ab95b4ed6dc694a3f16e4ccb04b05e2fef2da35edb0dc3d7cf1e24afe7739262", size = 477296, upload-time = "2026-11-03T08:21:52.297Z" },
 ]
 
 [[package]]
 name = "funflix-api"
-version = "1.0.37"
+version = "1.0.38"
 source = { editable = "." }
 dependencies = [
     { name = "authlib" },
@@ -557,6 +557,7 @@ dependencies = [
     { name = "funsecret" },
     { name = "itsdangerous" },
     { name = "joserfc" },
+    { name = "pydantic" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -573,10 +574,11 @@ requires-dist = [
     { name = "authlib", specifier = ">=1.6.5" },
     { name = "fastapi", specifier = ">=0.117.0" },
     { name = "funauth", extras = ["fastapi"], specifier = ">=0.2.3" },
-    { name = "funflix", specifier = ">=1.0.37" },
+    { name = "funflix", specifier = ">=1.0.38" },
     { name = "funsecret", specifier = ">=1.4.100" },
     { name = "itsdangerous", specifier = ">=2.0" },
     { name = "joserfc", specifier = ">=1.7" },
+    { name = "pydantic", specifier = ">=2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
     { name = "respx", marker = "extra == 'dev'", specifier = ">=0.21" },

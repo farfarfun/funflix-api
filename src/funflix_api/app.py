@@ -7,6 +7,7 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -15,6 +16,7 @@ from funflix.base.db import dispose_engine, get_engine
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
+from funflix_api.config import load_session_config, read_server_config
 from funflix_api.v1 import api_router, sso
 
 logger = logging.getLogger(__name__)
@@ -58,8 +60,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await dispose_engine()
 
 
-def create_app() -> FastAPI:
+def create_app(config: Path | None = None) -> FastAPI:
     settings = get_settings()
+    file_config = read_server_config(config)
+    session = load_session_config(file_config)
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
@@ -69,12 +73,12 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(
         SessionMiddleware,
-        secret_key=settings.session_secret,
-        max_age=settings.session_max_age,
+        secret_key=session.session_secret,
+        max_age=session.session_max_age,
         same_site="lax",
-        https_only=settings.session_cookie_secure,
+        https_only=session.session_cookie_secure,
     )
-    if sso.configure(app):
+    if sso.configure(app, file_config):
 
         @app.middleware("http")
         async def disable_local_login(request: Request, call_next):
