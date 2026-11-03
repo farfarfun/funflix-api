@@ -12,11 +12,12 @@ from funflix.base.db import get_session
 from funflix.models import User
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from funflix_api.app import create_app
 from funflix_api.config import read_server_config
-from funflix_api.v1.sso import load_config
+from funflix_api.v1.sso import _username, load_config
 
 
 class FakeOidcClient:
@@ -162,6 +163,25 @@ async def test_oidc_login_creates_guest_reuses_identity_and_blocks_disabled_user
         assert (await client.get("/api/v1/auth/oidc/callback")).status_code == 303
         assert (await client.get("/api/v1/auth/me")).json()["role"] == "guest"
         assert (await client.get("/api/v1/stats")).status_code == 403
+
+        fake.claims = {
+            "iss": "https://id.example.com",
+            "sub": "farfarfun/different-identity",
+            "preferred_username": "taken",
+        }
+        async with maker() as session:
+            session.add(
+                User(
+                    username=_username(
+                        "https://id.example.com", "farfarfun/different-identity", "taken"
+                    ),
+                    password_hash="local-hash",
+                )
+            )
+            await session.commit()
+        await client.get("/api/v1/auth/oidc/login")
+        with pytest.raises(IntegrityError):
+            await client.get("/api/v1/auth/oidc/callback")
 
 
 @pytest.mark.asyncio

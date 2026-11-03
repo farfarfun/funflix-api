@@ -100,7 +100,8 @@ session_cookie_secure = true
 `oidc_timeout_seconds` 是 Casdoor discovery 与换 token 请求的超时秒数，默认 120；
 身份服务响应仍慢时可适当调大。
 配置文件仅用于 API；`funflix db upgrade` 仍按 `FUNFLIX_DATABASE_URL` / funsecret
-连接数据库，必须与 API 使用同一数据库。先升级数据库，再重启服务：
+连接数据库，必须与 API 使用同一数据库。SSO 需要 `user.password_hash` 可空，
+升级包后先执行数据库迁移，再重启服务：
 
 ```bash
 chmod 600 ~/.farfarfun/funflix/api/config.toml

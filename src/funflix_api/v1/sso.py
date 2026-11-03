@@ -162,7 +162,7 @@ async def oidc_callback(request: Request, session: SessionDep) -> RedirectRespon
             await session.rollback()
             user = await session.scalar(query)
             if user is None:
-                raise HTTPException(409, "单点登录账号创建冲突") from None
+                raise
     if not user.is_active:
         raise HTTPException(403, "账号已停用")
     if user.role != role:
