@@ -61,9 +61,46 @@ funflix-api server restart
 | `FUNFLIX_SESSION_SECRET` | 随机（每次重启变化） | 会话 cookie 签名密钥；多进程/需跨重启保留会话的部署必须固定配置 |
 | `FUNFLIX_SESSION_MAX_AGE` | `2592000`（30 天） | 会话 cookie 有效期（秒） |
 | `FUNFLIX_SESSION_COOKIE_SECURE` | `false` | 会话 cookie 是否加 Secure 标记；确认部署链路全程 HTTPS 后再打开 |
-| `FUNFLIX_REGISTRATION_ENABLED` | `false` | 是否开放自助注册；默认关闭，账号由 `funflix user create` 创建 |
+| `FUNFLIX_REGISTRATION_ENABLED` | `true` | 是否开放邀请码注册；启用 SSO 后本地注册入口会关闭 |
 | `FUNFLIX_LOG_LEVEL` | `INFO` | |
 | `FUNFLIX_WORKER_ENABLED` | `false` | 是否在服务进程内额外起一个后台 worker |
+
+### Casdoor 单点登录
+
+在 Casdoor 创建独立的 `funflix` Application，启用 OIDC 授权码流程，并将 Redirect URL
+精确设为 `https://flix.example.com/api/v1/auth/oidc/callback`（换成 Funflix 的真实
+HTTPS 域名）。Client ID 和 Client Secret 只交给后端，不写入前端。
+
+在运行 API 的账号下创建 `~/.farfarfun/funflix/api/config.toml`：
+
+```toml
+host = "127.0.0.1"
+port = 18810
+oidc_issuer = "https://id.example.com"
+oidc_client_id = "Casdoor Application 的 Client ID"
+oidc_client_secret = "Casdoor Application 的 Client Secret"
+oidc_redirect_uri = "https://flix.example.com/api/v1/auth/oidc/callback"
+oidc_admin_subject = "Casdoor admin 用户的 ID Token sub"
+session_secret = "至少 32 字节的随机密钥"
+session_cookie_secure = true
+```
+
+将两个示例域名换成实际域名，并执行 `chmod 600 ~/.farfarfun/funflix/api/config.toml`。
+`issuer` 必须等于 Casdoor discovery 返回的 `issuer`。配置文件仅用于 API；
+`funflix db upgrade` 仍按 `FUNFLIX_DATABASE_URL` / funsecret 连接数据库，必须与 API
+使用同一数据库。先执行数据库升级，再启动新版 API 和 Web：
+
+```bash
+funflix db upgrade
+fundeploy service funflix restart
+```
+
+前端会显示“使用统一账号登录”。Casdoor 的 `admin` 用户登录后自动获得 Funflix
+`admin` 权限，其他用户首次登录自动创建无本地密码的 `guest` 账号。`oidc_admin_subject`
+填 Casdoor 管理界面中该用户的 ID（OIDC ID Token 的 `sub`），不能填显示名或邮箱。
+启用 SSO 后本地密码登录和邀请码
+注册接口关闭；退出 Funflix 会清除本站会话，不会注销其他 Casdoor 应用的会话。
+尚未配置 SSO 时，现有本地登录方式保持可用。
 
 ## 接口
 
@@ -105,8 +142,8 @@ funflix-api server restart
 
 ### 鉴权
 
-`/sources`、`/raw`、`/resources`、`/stats` 整个「运维」区都要求登录（基于会话
-cookie）；`/works`、`/works/{id}` 与 `/media/{id}` 保持开放，面向使用者。
+`/works`、`/media` 等浏览接口要求登录；`/sources`、`/raw`、`/resources`、
+`/stats` 还要求本地 `admin` 角色。认证后的请求使用 Funflix 的会话 cookie。
 
 先用 `funflix` 的 CLI 建一个账号（自助注册默认关闭，见上面的
 `FUNFLIX_REGISTRATION_ENABLED`）：

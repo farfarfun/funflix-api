@@ -95,13 +95,39 @@ def _load_server_config(config: Path | None) -> dict[str, Any]:
         data = dict(dotenv_values(path))
     else:
         _fail(f"不支持的配置文件格式：{path.suffix}（仅支持 .toml / .json / .env）")
-    return {str(key).lower(): value for key, value in data.items() if value is not None}
+    result = {str(key).lower(): value for key, value in data.items() if value is not None}
+    if (
+        any(
+            key in result
+            for key in (
+                "oidc_client_secret",
+                "funflix_oidc_client_secret",
+                "session_secret",
+                "funflix_session_secret",
+            )
+        )
+        and path.stat().st_mode & 0o077
+    ):
+        _fail(f"包含密钥的配置文件权限必须是 0600：{path}")
+    return result
 
 
 def _resolve_server_host_port(
     host: str | None, port: int | None, config: Path | None
 ) -> tuple[str, int]:
     file_config = _load_server_config(config)
+    for key in (
+        "session_secret",
+        "session_cookie_secure",
+        "oidc_issuer",
+        "oidc_client_id",
+        "oidc_client_secret",
+        "oidc_redirect_uri",
+        "oidc_admin_subject",
+    ):
+        value = file_config.get(key, file_config.get(f"funflix_{key}"))
+        if value is not None:
+            os.environ.setdefault(f"FUNFLIX_{key.upper()}", str(value))
     resolved_host = host or str(file_config.get("host") or DEFAULT_SERVER_HOST)
     resolved_port = (
         port if port is not None else int(file_config.get("port") or DEFAULT_SERVER_PORT)

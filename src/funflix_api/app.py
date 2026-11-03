@@ -8,13 +8,14 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from funflix.base.config import get_settings
 from funflix.base.db import dispose_engine, get_engine
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
-from funflix_api.v1 import api_router
+from funflix_api.v1 import api_router, sso
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,17 @@ def create_app() -> FastAPI:
         same_site="lax",
         https_only=settings.session_cookie_secure,
     )
+    if sso.configure(app):
+
+        @app.middleware("http")
+        async def disable_local_login(request: Request, call_next):
+            if request.method == "POST" and request.url.path in {
+                f"{settings.api_prefix}/auth/login",
+                f"{settings.api_prefix}/auth/register",
+            }:
+                return JSONResponse({"detail": "请使用单点登录"}, status_code=404)
+            return await call_next(request)
+
     app.include_router(api_router, prefix=settings.api_prefix)
 
     @app.get("/healthz", tags=["ops"])

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Query, status
@@ -82,4 +83,16 @@ session_store = CookieSessionStore()
 _guards = make_user_deps(accounts=accounts, session_dep=SessionDep, store=session_store)
 
 CurrentUserDep = _guards.current_user
-AdminUserDep = _guards.admin_user
+LocalAdminUserDep = _guards.admin_user
+
+
+async def sso_admin_user(user: LocalAdminUserDep) -> Any:
+    issuer = os.getenv("FUNFLIX_OIDC_ISSUER", "").rstrip("/")
+    if issuer and (
+        user.oidc_issuer != issuer or user.oidc_subject != os.getenv("FUNFLIX_OIDC_ADMIN_SUBJECT")
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
+    return user
+
+
+AdminUserDep = Annotated[Any, Depends(sso_admin_user)]
