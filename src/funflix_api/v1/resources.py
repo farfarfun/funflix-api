@@ -17,21 +17,45 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from funflix.base.config import get_settings
-from funflix.base.enums import CHECKABLE_PROVIDERS, CheckStatus, Provider
-from funflix.models import Resource
+from funflix.base.enums import CHECKABLE_PROVIDERS, CheckStatus, Provider, Quality
+from funflix.models import LinkCheck, Resource, media_resource
 from funflix.schemas.common import Page
-from funflix.schemas.media import ProviderVerifyReportOut, ResourceOut
-from funflix.services.verify.runner import RateLimiter
+from funflix.schemas.media import (
+    LinkCheckOut,
+    ProviderVerifyReportOut,
+    ResourceDetail,
+    ResourceOut,
+)
+from funflix.services.verify.runner import RateLimiter, check_resource
 from funflix.worker.tasks import run_verify_once
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, or_, select
 
 from funflix_api.deps import AdminUserDep, PageDep, SessionDep, get_or_404
 
 router = APIRouter(prefix="/resources", tags=["resources"])
 
 _VERIFY_TRIGGER_LIMIT = 500
+_RECENT_CHECKS_LIMIT = 20
+
+
+async def _build_resource_detail(session: SessionDep, resource: Resource) -> ResourceDetail:
+    """组装资源详情并附带最近若干次校验历史（按 (provider, share_id) 查询）。"""
+    checks = list(
+        await session.scalars(
+            select(LinkCheck)
+            .where(
+                LinkCheck.provider == resource.provider,
+                LinkCheck.share_id == resource.share_id,
+            )
+            .order_by(LinkCheck.checked_at.desc(), LinkCheck.id.desc())
+            .limit(_RECENT_CHECKS_LIMIT)
+        )
+    )
+    detail = ResourceDetail.model_validate(resource)
+    detail.recent_checks = [LinkCheckOut.model_validate(c) for c in checks]
+    return detail
 
 
 @router.get("", response_model=Page[ResourceOut])
@@ -41,8 +65,11 @@ async def list_resources(
     _: AdminUserDep,
     provider: Provider | None = None,
     check_status: CheckStatus | None = None,
+    quality: Quality | None = None,
+    q: str | None = Query(default=None, max_length=128, description="按链接或原始标题模糊搜索"),
+    orphan_only: bool = Query(default=False, description="仅返回尚未归属任何作品的资源"),
 ) -> Page[ResourceOut]:
-    """按网盘 / 校验状态翻页。
+    """按网盘 / 校验状态 / 画质 / 关键词翻页。
 
     排序用 `id` 而不是 `last_seen_at`：后者会被 ingest 在每次同一条链接被
     重新分享时改写，翻页途中行会在页与页之间来回移动 —— 客户端翻到第 2 页
@@ -54,8 +81,22 @@ async def list_resources(
         conditions.append(Resource.provider == provider)
     if check_status is not None:
         conditions.append(Resource.check_status == check_status)
+    if quality is not None:
+        conditions.append(Resource.quality == quality)
+    if q is not None and q.strip():
+        term = q.strip()
+        conditions.append(
+            or_(
+                Resource.url.icontains(term, autoescape=True),
+                Resource.title_raw.icontains(term, autoescape=True),
+            )
+        )
+    if orphan_only:
+        conditions.append(~exists(select(1).where(media_resource.c.resource_id == Resource.id)))
 
-    total = await session.scalar(select(func.count()).select_from(Resource).where(*conditions))
+    total = await session.scalar(select(func.count()).select_from(Resource).where(*conditions)) or 0
+    if total == 0 or paging.offset >= total:
+        return Page[ResourceOut](items=[], total=total, page=paging.page, size=paging.size)
     rows = await session.scalars(
         select(Resource)
         .where(*conditions)
@@ -65,7 +106,7 @@ async def list_resources(
     )
     return Page[ResourceOut](
         items=[ResourceOut.model_validate(r) for r in rows],
-        total=total or 0,
+        total=total,
         page=paging.page,
         size=paging.size,
     )
@@ -77,9 +118,21 @@ async def list_checkable_providers(_: AdminUserDep) -> list[Provider]:
     return sorted(CHECKABLE_PROVIDERS, key=lambda provider: provider.value)
 
 
+@router.get("/providers/status", response_model=dict[str, dict[str, float]])
+async def get_providers_limiter_status(
+    request: Request, _: AdminUserDep
+) -> dict[str, dict[str, float]]:
+    """返回各可校验网盘当前的自适应限流系数与熔断冷却剩余秒数。"""
+    limiter = getattr(request.app.state, "verify_limiter", None)
+    if limiter is None:
+        limiter = RateLimiter(rate_per_second=get_settings().worker_verify_rate)
+        request.app.state.verify_limiter = limiter
+    return limiter.intervals.status_snapshot(sorted(CHECKABLE_PROVIDERS, key=lambda p: p.value))
+
+
 @router.post("/providers/{provider}/verify", response_model=ProviderVerifyReportOut)
 async def verify_provider(
-    provider: Provider, session: SessionDep, _: AdminUserDep
+    provider: Provider, request: Request, session: SessionDep, _: AdminUserDep
 ) -> ProviderVerifyReportOut:
     """手动强制复查指定网盘最久未校验的一批资源。"""
     if provider not in CHECKABLE_PROVIDERS:
@@ -87,11 +140,15 @@ async def verify_provider(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"{provider.value} 暂不支持校验",
         )
+    limiter = getattr(request.app.state, "verify_limiter", None)
+    if limiter is None:
+        limiter = RateLimiter(rate_per_second=get_settings().worker_verify_rate)
+        request.app.state.verify_limiter = limiter
     report = await run_verify_once(
         session,
         provider=provider,
         limit=_VERIFY_TRIGGER_LIMIT,
-        limiter=RateLimiter(rate_per_second=get_settings().worker_verify_rate),
+        limiter=limiter,
     )
     return ProviderVerifyReportOut(
         provider=provider,
@@ -103,13 +160,31 @@ async def verify_provider(
     )
 
 
-@router.get("/{resource_id}", response_model=ResourceOut)
-async def get_resource(resource_id: uuid.UUID, session: SessionDep, _: AdminUserDep) -> ResourceOut:
-    """单条资源详情。与列表接口同样要 key。
+@router.get("/{resource_id}", response_model=ResourceDetail)
+async def get_resource(
+    resource_id: uuid.UUID, session: SessionDep, _: AdminUserDep
+) -> ResourceDetail:
+    """单条资源详情，附带最近校验历史供运维排查。"""
+    resource = await get_or_404(session, Resource, resource_id, "资源不存在")
+    return await _build_resource_detail(session, resource)
 
-    这里曾经是开放的，理由写的是「知道 id 才查得到」—— 那个推理在 id 还是
-    自增整数时是错的：`seq 1 100000` 就能把列表接口上的锁绕过去（issue #2）。
-    """
-    return ResourceOut.model_validate(
-        await get_or_404(session, Resource, resource_id, "资源不存在")
-    )
+
+@router.post("/{resource_id}/recheck", response_model=ResourceDetail)
+async def recheck_resource(
+    resource_id: uuid.UUID, request: Request, session: SessionDep, _: AdminUserDep
+) -> ResourceDetail:
+    """立即对单条网盘资源执行一次校验，并返回最新状态与校验历史。"""
+    resource = await get_or_404(session, Resource, resource_id, "资源不存在")
+    if resource.provider not in CHECKABLE_PROVIDERS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{resource.provider.value} 暂不支持校验",
+        )
+    limiter = getattr(request.app.state, "verify_limiter", None)
+    if limiter is None:
+        limiter = RateLimiter(rate_per_second=get_settings().worker_verify_rate)
+        request.app.state.verify_limiter = limiter
+    await check_resource(session, resource, limiter=limiter)
+    await session.commit()
+    await session.refresh(resource)
+    return await _build_resource_detail(session, resource)

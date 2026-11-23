@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, status
 from funflix.base.enums import ParseStatus, SourceType
-from funflix.models import RawDocument
+from funflix.models import Extraction, RawDocument
 from funflix.schemas.raw import (
     BatchIngestResult,
     IngestResult,
@@ -16,8 +16,10 @@ from funflix.schemas.raw import (
     RawDocumentOut,
     RawDocumentSummary,
 )
+from funflix.services.extract.registry import default_extractor_for, get_extractor
+from funflix.services.extract.runner import parse_document
 from funflix.services.ingest import IngestOutcome, ingest_document, ingest_many
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from funflix_api.deps import AdminUserDep, PageDep, SessionDep, SettingsDep
 
@@ -105,8 +107,8 @@ async def list_raw_documents(
         conditions.append(RawDocument.parse_status == parse_status)
     if source_type is not None:
         conditions.append(RawDocument.source_type == source_type)
-    if source_name is not None:
-        conditions.append(RawDocument.source_name == source_name)
+    if source_name is not None and source_name.strip():
+        conditions.append(RawDocument.source_name.icontains(source_name.strip(), autoescape=True))
 
     total = await session.scalar(select(func.count()).select_from(RawDocument).where(*conditions))
     rows = await session.scalars(
@@ -131,4 +133,25 @@ async def get_raw_document(
     doc = await session.get(RawDocument, doc_id)
     if doc is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="原始文本不存在")
+    return RawDocumentOut.model_validate(doc)
+
+
+@router.post("/{doc_id}/reparse", response_model=RawDocumentOut)
+async def reparse_raw_document(
+    doc_id: uuid.UUID, session: SessionDep, _: AdminUserDep
+) -> RawDocumentOut:
+    """清除该条原始文本的抽取缓存并立即按默认抽取器重新解析。"""
+    doc = await session.get(RawDocument, doc_id)
+    if doc is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="原始文本不存在")
+    await session.execute(delete(Extraction).where(Extraction.raw_document_id == doc.id))
+    doc.parse_status = ParseStatus.PENDING
+    doc.parse_attempts = 0
+    doc.parse_error = None
+    doc.lease_until = None
+    doc.next_parse_at = None
+    extractor = get_extractor(default_extractor_for(doc.source_type))
+    await parse_document(session, doc, extractor, force=True)
+    await session.commit()
+    await session.refresh(doc)
     return RawDocumentOut.model_validate(doc)

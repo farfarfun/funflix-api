@@ -59,12 +59,38 @@ class SessionConfig(BaseModel):
     session_secret: str = Field(default_factory=lambda: secrets.token_hex(32))
     session_max_age: int = Field(default=60 * 60 * 24 * 30, gt=0)
     session_cookie_secure: bool = False
+    ephemeral_secret: bool = False
 
 
 def load_session_config(config: dict[str, Any]) -> SessionConfig:
-    values = {}
+    values: dict[str, Any] = {}
     for key in ("session_secret", "session_max_age", "session_cookie_secure"):
         value = config_value(config, key)
         if value is not None:
             values[key] = value
+    if "session_secret" not in values:
+        values["ephemeral_secret"] = True
     return SessionConfig.model_validate(values)
+
+
+def load_stats_cache_ttl(config: dict[str, Any]) -> float:
+    raw = config_value(config, "stats_cache_ttl_seconds")
+    if raw is None:
+        return 15.0
+    try:
+        ttl = float(raw)
+    except (TypeError, ValueError):
+        return 15.0
+    return max(0.0, ttl)
+
+
+def load_detail_rate_limit(config: dict[str, Any]) -> int:
+    """详情接口（/works/{id}、/media/{id}）单 IP 每分钟限流阈值，防批量枚举抓取。0 表示关闭。"""
+    raw = config_value(config, "detail_rate_limit_per_minute")
+    if raw is None:
+        return 120
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return 120
+    return max(0, val)

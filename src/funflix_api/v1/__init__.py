@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from funflix_api.v1 import auth, media, raw, resources, sources, sso, stats, works
+from funflix_api.v1 import auth, jobs, media, raw, resources, sources, sso, stats, works
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
@@ -13,5 +13,6 @@ api_router.include_router(works.router)
 api_router.include_router(media.router)
 api_router.include_router(resources.router)
 api_router.include_router(stats.router)
+api_router.include_router(jobs.router)
 
 __all__ = ["api_router"]
